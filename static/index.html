@@ -1,0 +1,148 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>DeutschCoach</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; padding: 16px; }
+    button { font-size: 20px; padding: 14px 16px; width: 100%; }
+    .box { margin-top: 12px; padding: 12px; border: 1px solid #ddd; border-radius: 10px; }
+    .label { font-weight: 600; margin-bottom: 6px; }
+  </style>
+</head>
+<body>
+  <h2>DeutschCoach (Österreich)</h2>
+  <button id="talkBtn">🎤 Hold to talk</button>
+
+  <div style="margin-bottom:12px;">
+    <label class="label">Mode:</label>
+    <select id="mode" style="font-size:18px; width:100%; padding:10px;">
+      <option value="chat">🗣 Chat</option>
+      <option value="correct">✏️ Correct my sentence</option>
+      <option value="roleplay">🎭 Roleplay (Bäckerei/Schule)</option>
+      <option value="quiz">🧠 Mini quiz</option>
+    </select>
+  </div>
+
+  <div class="box">
+    <div class="label">You said</div>
+    <div id="transcript">—</div>
+  </div>
+
+  <div class="box">
+    <div class="label">Coach</div>
+    <div id="reply">—</div>
+  </div>
+
+  <audio id="player" controls style="width:100%; margin-top: 12px;"></audio>
+
+  <script>
+    const talkBtn = document.getElementById("talkBtn");
+    const transcriptEl = document.getElementById("transcript");
+    const replyEl = document.getElementById("reply");
+    const player = document.getElementById("player");
+    const modeEl = document.getElementById("mode");
+    let sessionId = localStorage.getItem("sessionId") || "";
+
+    let mediaRecorder, chunks = [];
+
+    async function startRecording() {
+      transcriptEl.textContent = "Listening…";
+      replyEl.textContent = "—";
+      chunks = [];
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream);
+      mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
+      mediaRecorder.start();
+    }
+
+    async function stopRecording() {
+      return new Promise((resolve) => {
+        mediaRecorder.onstop = () => resolve();
+        mediaRecorder.stop();
+      });
+    }
+
+
+  async function sendToServer(blob) {
+    transcriptEl.textContent = "Sending…";
+
+    const fd = new FormData();
+    fd.append("audio", blob, "speech.webm");
+
+    fd.append("mode", modeEl.value);
+    fd.append("session_id", sessionId);
+    // timeout after 45s so UI doesn’t hang forever
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), 45000);
+
+    try {
+      const res = await fetch("/talk", {
+        method: "POST",
+        body: fd,
+        signal: controller.signal
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        transcriptEl.textContent = `Server error (${res.status})`;
+        replyEl.textContent = text.slice(0, 400);
+        return;
+      }
+
+      const data = await res.json();
+      if (data.session_id) {
+               sessionId = data.session_id;
+               localStorage.setItem("sessionId", sessionId);
+               }
+      transcriptEl.textContent = data.transcript || "—";
+      replyEl.textContent = data.reply || "—";
+
+      const bytes = Uint8Array.from(atob(data.audio_b64), c => c.charCodeAt(0));
+      const mp3Blob = new Blob([bytes], { type: "audio/mpeg" });
+      player.src = URL.createObjectURL(mp3Blob);
+      await player.play();
+
+    } catch (err) {
+      transcriptEl.textContent = "Failed to send (see error)";
+      replyEl.textContent =
+        err.name === "AbortError"
+          ? "Timed out waiting for the server. Check your server terminal for errors."
+          : (err.message || String(err));
+    } finally {
+      clearTimeout(t);
+    }
+  }
+
+
+
+    talkBtn.addEventListener("touchstart", async (e) => {
+      e.preventDefault();
+      await startRecording();
+      talkBtn.textContent = "⏺️ Recording… release to send";
+    });
+
+    talkBtn.addEventListener("touchend", async (e) => {
+      e.preventDefault();
+      await stopRecording();
+      talkBtn.textContent = "🎤 Hold to talk";
+      const blob = new Blob(chunks, { type: "audio/webm" });
+      await sendToServer(blob);
+    });
+
+    // Also support mouse for laptop testing
+    talkBtn.addEventListener("mousedown", async () => {
+      await startRecording();
+      talkBtn.textContent = "⏺️ Recording… release to send";
+    });
+    talkBtn.addEventListener("mouseup", async () => {
+      await stopRecording();
+      talkBtn.textContent = "🎤 Hold to talk";
+      const blob = new Blob(chunks, { type: "audio/webm" });
+      await sendToServer(blob);
+    });
+  </script>
+</body>
+</html>

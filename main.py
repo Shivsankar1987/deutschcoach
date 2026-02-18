@@ -9,6 +9,7 @@ import traceback
 import uuid
 from typing import Dict, List
 from fastapi import Form
+from fastapi import Body
 
 # ---- Session memory ----
 SESSIONS: Dict[str, List[dict]] = {}  # session_id -> list of messages
@@ -16,6 +17,16 @@ MAX_TURNS = 6  # keep last 6 messages (user+assistant)
 # ------------------------
 
 app = FastAPI()
+
+@app.post("/reset")
+async def reset(payload: dict = Body(...)):
+    session_id = (payload.get("session_id") or "").strip()
+
+    if session_id and session_id in SESSIONS:
+        del SESSIONS[session_id]
+
+    return JSONResponse({"status": "reset"})
+    
 app.mount("/static", StaticFiles(directory="static"), name="static")  # :contentReference[oaicite:3]{index=3}
 
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))

@@ -14,7 +14,9 @@
 <body>
   <h2>DeutschCoach (Österreich)</h2>
   <button id="talkBtn">🎤 Hold to talk</button>
-
+  <button id="resetBtn" style="margin-top:10px;">
+    🔄 Reset Conversation
+  </button>
   <div style="margin-bottom:12px;">
     <label class="label">Mode:</label>
     <select id="mode" style="font-size:18px; width:100%; padding:10px;">
@@ -43,6 +45,8 @@
     const replyEl = document.getElementById("reply");
     const player = document.getElementById("player");
     const modeEl = document.getElementById("mode");
+    const resetBtn = document.getElementById("resetBtn");
+
     let sessionId = localStorage.getItem("sessionId") || "";
 
     let mediaRecorder, chunks = [];
@@ -143,6 +147,36 @@
       const blob = new Blob(chunks, { type: "audio/webm" });
       await sendToServer(blob);
     });
+    
+    resetBtn.addEventListener("click", async () => {
+
+    if (!sessionId) {
+        replyEl.textContent = "No active session to reset.";
+        return;
+    }
+
+    try {
+        await fetch("/reset", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ session_id: sessionId })
+        });
+    } catch (e) {
+        console.error("Reset error:", e);
+    }
+
+    // Clear browser session
+    sessionId = "";
+    localStorage.removeItem("sessionId");
+
+    // Clear UI
+    transcriptEl.textContent = "—";
+    replyEl.textContent = "Conversation reset. Sag: Hallo 🙂";
+    player.src = "";
+});
+
   </script>
 </body>
 </html>

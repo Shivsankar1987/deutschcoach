@@ -17,6 +17,11 @@
   <button id="resetBtn" style="margin-top:10px;">
     🔄 Reset Conversation
   </button>
+  <div class="box">
+    <div class="label">Mic status</div>
+    <div id="micStatus">—</div>
+  </div>
+
   <div style="margin-bottom:12px;">
     <label class="label">Mode:</label>
     <select id="mode" style="font-size:18px; width:100%; padding:10px;">
@@ -46,11 +51,23 @@
     const player = document.getElementById("player");
     const modeEl = document.getElementById("mode");
     const resetBtn = document.getElementById("resetBtn");
+    const micStatusEl = document.getElementById("micStatus");
     let micPermissionGranted = false;
 
     let sessionId = localStorage.getItem("sessionId") || "";
 
     let mediaRecorder, chunks = [];
+
+    async function requestMicOnce() {
+    try {
+        micStatusEl.textContent = "Requesting microphone permission…";
+        const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+        s.getTracks().forEach(t => t.stop()); // stop immediately
+        micStatusEl.textContent = "✅ Microphone permission OK";
+        } catch (err) {
+         micStatusEl.textContent = `❌ Mic blocked: ${err.name} — ${err.message}`;
+  }
+}
 
 async function startRecording() {
   transcriptEl.textContent = "Listening…";
@@ -186,6 +203,9 @@ async function startRecording() {
         }
 
 }, { once: true });
+
+    talkBtn.addEventListener("click", requestMicOnce);
+
     // Also support mouse for laptop testing
     talkBtn.addEventListener("mousedown", async () => {
       await startRecording();

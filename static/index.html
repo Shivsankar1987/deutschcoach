@@ -51,16 +51,35 @@
 
     let mediaRecorder, chunks = [];
 
-    async function startRecording() {
-      transcriptEl.textContent = "Listening…";
-      replyEl.textContent = "—";
-      chunks = [];
+async function startRecording() {
+  transcriptEl.textContent = "Listening…";
+  replyEl.textContent = "—";
+  chunks = [];
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorder = new MediaRecorder(stream);
-      mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
-      mediaRecorder.start();
-    }
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+  // Pick the best supported mimeType for this browser (iPad Safari can be picky)
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4",          // sometimes works better on iOS
+    "audio/aac"
+  ];
+
+  let chosen = "";
+  for (const t of candidates) {
+    if (MediaRecorder.isTypeSupported(t)) { chosen = t; break; }
+  }
+
+  mediaRecorder = chosen ? new MediaRecorder(stream, { mimeType: chosen }) : new MediaRecorder(stream);
+
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data && e.data.size > 0) chunks.push(e.data);
+  };
+
+  mediaRecorder.start();
+}
+
 
     async function stopRecording() {
       return new Promise((resolve) => {
@@ -74,7 +93,15 @@
     transcriptEl.textContent = "Sending…";
 
     const fd = new FormData();
-    fd.append("audio", blob, "speech.webm");
+    const mime = blob.type || "";
+    let ext = "webm";
+    if (mime.includes("mp4")) ext = "mp4";
+    else if (mime.includes("ogg")) ext = "ogg";
+    else if (mime.includes("wav")) ext = "wav";
+    else if (mime.includes("mpeg")) ext = "mp3";
+
+    fd.append("audio", blob, `speech.${ext}`);
+    console.log("Sending audio:", blob.type, blob.size);
 
     fd.append("mode", modeEl.value);
     fd.append("session_id", sessionId);
@@ -136,7 +163,7 @@
             transcriptEl.textContent = "No audio captured. Try again.";
       return;
      }
-      const blob = new Blob(chunks, { type: mediaRecorder.mimeType || "audio/webm" });
+     const blob = new Blob(chunks, { type: mediaRecorder.mimeType || chunks[0].type || "audio/webm" });
       await sendToServer(blob);
     });
 
@@ -152,8 +179,7 @@
           transcriptEl.textContent = "No audio captured. Try again.";
       return;
       }
-      const blob = new Blob(chunks, { type: mediaRecorder.mimeType || "audio/webm" });
-
+      const blob = new Blob(chunks, { type: mediaRecorder.mimeType || chunks[0].type || "audio/webm" });
 
       await sendToServer(blob);
     });

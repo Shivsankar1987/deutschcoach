@@ -70,6 +70,11 @@ async def talk(audio: UploadFile = File(...),
     try:
         # 1) Speech-to-text (transcription)
         audio_bytes = await audio.read()
+        print("UPLOAD:", audio.filename, "bytes=", len(audio_bytes))
+
+        if not audio_bytes or len(audio_bytes) < 1000:
+           raise HTTPException(status_code=400, detail="Audio too short/empty. Please try again.")
+
         
         if not session_id:
             session_id = str(uuid.uuid4())

@@ -10,6 +10,8 @@ import uuid
 from typing import Dict, List
 from fastapi import Form
 from fastapi import Body
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+
 
 # ---- Session memory ----
 SESSIONS: Dict[str, List[dict]] = {}  # session_id -> list of messages
@@ -26,7 +28,7 @@ async def reset(payload: dict = Body(...)):
         del SESSIONS[session_id]
 
     return JSONResponse({"status": "reset"})
-    
+
 app.mount("/static", StaticFiles(directory="static"), name="static")  # :contentReference[oaicite:3]{index=3}
 
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))

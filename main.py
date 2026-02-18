@@ -11,6 +11,8 @@ from typing import Dict, List
 from fastapi import Form
 from fastapi import Body
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+
 
 
 # ---- Session memory ----
@@ -19,6 +21,13 @@ MAX_TURNS = 6  # keep last 6 messages (user+assistant)
 # ------------------------
 
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # you can restrict later
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.post("/reset")
 async def reset(payload: dict = Body(...)):

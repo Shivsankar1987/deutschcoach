@@ -58,21 +58,23 @@
 
     let mediaRecorder, chunks = [];
 
-    // Remove requestMicOnce, handle permission in click handler
+    async function requestMicOnce() {
+    try {
+        micStatusEl.textContent = "Requesting microphone permission…";
+        const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+        s.getTracks().forEach(t => t.stop()); // stop immediately
+        micStatusEl.textContent = "✅ Microphone permission OK";
+        } catch (err) {
+         micStatusEl.textContent = `❌ Mic blocked: ${err.name} — ${err.message}`;
+  }
+}
 
 async function startRecording() {
   transcriptEl.textContent = "Listening…";
   replyEl.textContent = "—";
   chunks = [];
 
-  let stream;
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  } catch (err) {
-    micStatusEl.textContent = `❌ Mic blocked: ${err.name} — ${err.message}`;
-    alert("Microphone access blocked. Please allow it in Safari settings: Settings > Safari > Microphone > Allow");
-    return;
-  }
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
   // Pick the best supported mimeType for this browser (iPad Safari can be picky)
   const candidates = [
@@ -84,22 +86,10 @@ async function startRecording() {
 
   let chosen = "";
   for (const t of candidates) {
-    if (window.MediaRecorder && MediaRecorder.isTypeSupported(t)) { chosen = t; break; }
+    if (MediaRecorder.isTypeSupported(t)) { chosen = t; break; }
   }
 
-  if (!window.MediaRecorder) {
-    micStatusEl.textContent = "❌ MediaRecorder not supported on this browser.";
-    alert("Recording is not supported on this browser. Please use Safari 14+ or Chrome.");
-    return;
-  }
-
-  try {
-    mediaRecorder = chosen ? new MediaRecorder(stream, { mimeType: chosen }) : new MediaRecorder(stream);
-  } catch (err) {
-    micStatusEl.textContent = `❌ MediaRecorder error: ${err.name} — ${err.message}`;
-    alert("Recording failed. Try updating your browser or use Safari/Chrome.");
-    return;
-  }
+  mediaRecorder = chosen ? new MediaRecorder(stream, { mimeType: chosen }) : new MediaRecorder(stream);
 
   mediaRecorder.ondataavailable = (e) => {
     if (e.data && e.data.size > 0) chunks.push(e.data);
@@ -198,20 +188,23 @@ async function startRecording() {
 
 
 
-    // Improved mic permission request for iOS/Safari
-    talkBtn.addEventListener("click", async () => {
-      if (micPermissionGranted) return;
-      try {
-        await navigator.mediaDevices.getUserMedia({ audio: true });
-        micPermissionGranted = true;
-        micStatusEl.textContent = "✅ Microphone permission OK";
-        console.log("Microphone permission granted");
-      } catch (err) {
-        micStatusEl.textContent = `❌ Mic blocked: ${err.name} — ${err.message}`;
-        alert("Microphone access blocked. Please allow it in Safari settings: Settings > Safari > Microphone > Allow");
-        console.error(err);
-      }
-    }, { once: true });
+     // One-time mic permission request
+     talkBtn.addEventListener("click", async () => {
+
+     if (micPermissionGranted) return;
+
+     try {
+         await navigator.mediaDevices.getUserMedia({ audio: true });
+         micPermissionGranted = true;
+         console.log("Microphone permission granted");
+        } catch (err) {
+        alert("Microphone access blocked. Please allow it in Safari settings.");
+    console.error(err);
+        }
+
+}, { once: true });
+
+    talkBtn.addEventListener("click", requestMicOnce);
 
     // Also support mouse for laptop testing
     talkBtn.addEventListener("mousedown", async () => {

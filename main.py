@@ -18,9 +18,6 @@ from fastapi.middleware.cors import CORSMiddleware
 # ---- Session memory ----
 SESSIONS: Dict[str, List[dict]] = {}  # session_id -> list of messages
 MAX_TURNS = 6  # keep last 6 messages (user+assistant)
-# Minimum number of bytes for an audio upload to be considered valid.
-# Lowered a bit to be more forgiving for short mobile/iOS recordings.
-MIN_AUDIO_BYTES = 500
 # ------------------------
 
 app = FastAPI()
@@ -82,10 +79,10 @@ async def talk(audio: UploadFile = File(...),
     try:
         # 1) Speech-to-text (transcription)
         audio_bytes = await audio.read()
-          print("UPLOAD:", audio.filename, "content_type=", getattr(audio, "content_type", None), "bytes=", len(audio_bytes))
+        print("UPLOAD:", audio.filename, "bytes=", len(audio_bytes))
 
-          if not audio_bytes or len(audio_bytes) < MIN_AUDIO_BYTES:
-              raise HTTPException(status_code=400, detail="Audio too short/empty. Bitte etwas länger sprechen und noch einmal probieren.")
+        if not audio_bytes or len(audio_bytes) < 1000:
+           raise HTTPException(status_code=400, detail="Audio too short/empty. Please try again.")
 
         
         if not session_id:

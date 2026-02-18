@@ -46,6 +46,7 @@
     const player = document.getElementById("player");
     const modeEl = document.getElementById("mode");
     const resetBtn = document.getElementById("resetBtn");
+    let micPermissionGranted = false;
 
     let sessionId = localStorage.getItem("sessionId") || "";
 
@@ -167,6 +168,24 @@ async function startRecording() {
       await sendToServer(blob);
     });
 
+
+
+
+     // One-time mic permission request
+     talkBtn.addEventListener("click", async () => {
+
+     if (micPermissionGranted) return;
+
+     try {
+         await navigator.mediaDevices.getUserMedia({ audio: true });
+         micPermissionGranted = true;
+         console.log("Microphone permission granted");
+        } catch (err) {
+        alert("Microphone access blocked. Please allow it in Safari settings.");
+    console.error(err);
+        }
+
+}, { once: true });
     // Also support mouse for laptop testing
     talkBtn.addEventListener("mousedown", async () => {
       await startRecording();

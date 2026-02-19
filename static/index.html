@@ -1,257 +1,148 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>DeutschCoach</title>
-  <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; padding: 16px; }
-    button { font-size: 20px; padding: 14px 16px; width: 100%; }
-    .box { margin-top: 12px; padding: 12px; border: 1px solid #ddd; border-radius: 10px; }
-    .label { font-weight: 600; margin-bottom: 6px; }
-  </style>
+<meta charset="UTF-8">
+<title>DeutschCoach</title>
+<style>
+body { font-family: sans-serif; max-width: 600px; margin: 40px auto; }
+button { width: 100%; padding: 16px; margin: 8px 0; font-size: 18px; }
+.box { border: 1px solid #ccc; padding: 12px; margin-top: 10px; border-radius: 8px; }
+#talkBtn { touch-action: none; }
+</style>
 </head>
 <body>
-  <h2>DeutschCoach (Österreich)</h2>
-  <button id="talkBtn">🎤 Hold to talk</button>
-  <button id="resetBtn" style="margin-top:10px;">
-    🔄 Reset Conversation
-  </button>
-  <div class="box">
-    <div class="label">Mic status</div>
-    <div id="micStatus">—</div>
-  </div>
 
-  <div style="margin-bottom:12px;">
-    <label class="label">Mode:</label>
-    <select id="mode" style="font-size:18px; width:100%; padding:10px;">
-      <option value="chat">🗣 Chat</option>
-      <option value="correct">✏️ Correct my sentence</option>
-      <option value="roleplay">🎭 Roleplay (Bäckerei/Schule)</option>
-      <option value="quiz">🧠 Mini quiz</option>
-    </select>
-  </div>
+<h1>DeutschCoach (Österreich)</h1>
 
-  <div class="box">
-    <div class="label">You said</div>
-    <div id="transcript">—</div>
-  </div>
+<button id="talkBtn">🎤 Hold to talk</button>
+<button id="resetBtn">🔄 Reset Conversation</button>
 
-  <div class="box">
-    <div class="label">Coach</div>
-    <div id="reply">—</div>
-  </div>
+<div class="box">
+<b>Mic status</b>
+<div id="micStatus">—</div>
+</div>
 
-  <audio id="player" controls style="width:100%; margin-top: 12px;"></audio>
+<div class="box">
+<b>You said</b>
+<div id="transcript">—</div>
+</div>
 
-  <script>
-    const talkBtn = document.getElementById("talkBtn");
-    const transcriptEl = document.getElementById("transcript");
-    const replyEl = document.getElementById("reply");
-    const player = document.getElementById("player");
-    const modeEl = document.getElementById("mode");
-    const resetBtn = document.getElementById("resetBtn");
-    const micStatusEl = document.getElementById("micStatus");
-    let micPermissionGranted = false;
+<div class="box">
+<b>Coach</b>
+<div id="reply">—</div>
+</div>
 
-    let sessionId = localStorage.getItem("sessionId") || "";
+<audio id="player" controls></audio>
 
-    let mediaRecorder, chunks = [];
+<script>
+let mediaRecorder;
+let chunks = [];
+let sessionId = localStorage.getItem("sessionId") || "";
 
-    async function requestMicOnce() {
-    try {
-        micStatusEl.textContent = "Requesting microphone permission…";
-        const s = await navigator.mediaDevices.getUserMedia({ audio: true });
-        s.getTracks().forEach(t => t.stop()); // stop immediately
-        micStatusEl.textContent = "✅ Microphone permission OK";
-        } catch (err) {
-         micStatusEl.textContent = `❌ Mic blocked: ${err.name} — ${err.message}`;
-  }
-}
+const talkBtn = document.getElementById("talkBtn");
+const resetBtn = document.getElementById("resetBtn");
+const transcriptEl = document.getElementById("transcript");
+const replyEl = document.getElementById("reply");
+const micStatusEl = document.getElementById("micStatus");
+const player = document.getElementById("player");
 
 async function startRecording() {
+  micStatusEl.textContent = "Requesting microphone…";
   transcriptEl.textContent = "Listening…";
   replyEl.textContent = "—";
   chunks = [];
 
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (err) {
+    micStatusEl.textContent = `❌ Mic blocked: ${err.name}`;
+    throw err;
+  }
 
-  // Pick the best supported mimeType for this browser (iPad Safari can be picky)
-  const candidates = [
-    "audio/webm;codecs=opus",
-    "audio/webm",
-    "audio/mp4",          // sometimes works better on iOS
-    "audio/aac"
-  ];
-
+  const candidates = ["audio/webm;codecs=opus","audio/webm","audio/mp4"];
   let chosen = "";
   for (const t of candidates) {
-    if (MediaRecorder.isTypeSupported(t)) { chosen = t; break; }
+    if (window.MediaRecorder && MediaRecorder.isTypeSupported(t)) {
+      chosen = t;
+      break;
+    }
+  }
+
+  if (!window.MediaRecorder) {
+    micStatusEl.textContent = "❌ MediaRecorder not supported on this iOS.";
+    throw new Error("MediaRecorderNotAvailable");
   }
 
   mediaRecorder = chosen ? new MediaRecorder(stream, { mimeType: chosen }) : new MediaRecorder(stream);
-
   mediaRecorder.ondataavailable = (e) => {
-    if (e.data && e.data.size > 0) chunks.push(e.data);
+    if (e.data.size > 0) chunks.push(e.data);
   };
-
   mediaRecorder.start();
+  micStatusEl.textContent = "✅ Recording…";
 }
 
+async function stopRecording() {
+  if (!mediaRecorder) return;
+  return new Promise(resolve => {
+    mediaRecorder.onstop = resolve;
+    mediaRecorder.stop();
+  });
+}
 
-    async function stopRecording() {
-      return new Promise((resolve) => {
-        mediaRecorder.onstop = () => resolve();
-        mediaRecorder.stop();
-      });
-    }
+async function sendToServer(blob) {
+  transcriptEl.textContent = "Sending…";
 
+  const fd = new FormData();
+  const ext = blob.type.includes("mp4") ? "mp4" : "webm";
+  fd.append("audio", blob, `speech.${ext}`);
+  fd.append("mode", "chat");
+  fd.append("session_id", sessionId);
 
-  async function sendToServer(blob) {
-    transcriptEl.textContent = "Sending…";
+  const res = await fetch("/talk", { method: "POST", body: fd });
+  const data = await res.json();
 
-    const fd = new FormData();
-    const mime = blob.type || "";
-    let ext = "webm";
-    if (mime.includes("mp4")) ext = "mp4";
-    else if (mime.includes("ogg")) ext = "ogg";
-    else if (mime.includes("wav")) ext = "wav";
-    else if (mime.includes("mpeg")) ext = "mp3";
-
-    fd.append("audio", blob, `speech.${ext}`);
-    console.log("Sending audio:", blob.type, blob.size);
-
-    fd.append("mode", modeEl.value);
-    fd.append("session_id", sessionId);
-    // timeout after 45s so UI doesn’t hang forever
-    const controller = new AbortController();
-    const t = setTimeout(() => controller.abort(), 45000);
-
-    try {
-      const res = await fetch("/talk", {
-        method: "POST",
-        body: fd,
-        signal: controller.signal
-      });
-
-      if (!res.ok) {
-        const text = await res.text();
-        transcriptEl.textContent = `Server error (${res.status})`;
-        replyEl.textContent = text.slice(0, 400);
-        return;
-      }
-
-      const data = await res.json();
-      if (data.session_id) {
-               sessionId = data.session_id;
-               localStorage.setItem("sessionId", sessionId);
-               }
-      transcriptEl.textContent = data.transcript || "—";
-      replyEl.textContent = data.reply || "—";
-
-      const bytes = Uint8Array.from(atob(data.audio_b64), c => c.charCodeAt(0));
-      const mp3Blob = new Blob([bytes], { type: "audio/mpeg" });
-      player.src = URL.createObjectURL(mp3Blob);
-      await player.play();
-
-    } catch (err) {
-      transcriptEl.textContent = "Failed to send (see error)";
-      replyEl.textContent =
-        err.name === "AbortError"
-          ? "Timed out waiting for the server. Check your server terminal for errors."
-          : (err.message || String(err));
-    } finally {
-      clearTimeout(t);
-    }
+  if (data.session_id) {
+    sessionId = data.session_id;
+    localStorage.setItem("sessionId", sessionId);
   }
 
+  transcriptEl.textContent = data.transcript;
+  replyEl.textContent = data.reply;
 
+  if (data.audio_b64) {
+    player.src = "data:audio/mp3;base64," + data.audio_b64;
+  }
+}
 
-    talkBtn.addEventListener("touchstart", async (e) => {
-      e.preventDefault();
-      await startRecording();
-      talkBtn.textContent = "⏺️ Recording… release to send";
-    });
-
-    talkBtn.addEventListener("touchend", async (e) => {
-      e.preventDefault();
-      await stopRecording();
-      talkBtn.textContent = "🎤 Hold to talk";
-      if (!chunks.length) {
-            transcriptEl.textContent = "No audio captured. Try again.";
-      return;
-     }
-     const blob = new Blob(chunks, { type: mediaRecorder.mimeType || chunks[0].type || "audio/webm" });
-      await sendToServer(blob);
-    });
-
-
-
-
-     // One-time mic permission request
-     talkBtn.addEventListener("click", async () => {
-
-     if (micPermissionGranted) return;
-
-     try {
-         await navigator.mediaDevices.getUserMedia({ audio: true });
-         micPermissionGranted = true;
-         console.log("Microphone permission granted");
-        } catch (err) {
-        alert("Microphone access blocked. Please allow it in Safari settings.");
-    console.error(err);
-        }
-
-}, { once: true });
-
-    talkBtn.addEventListener("click", requestMicOnce);
-
-    // Also support mouse for laptop testing
-    talkBtn.addEventListener("mousedown", async () => {
-      await startRecording();
-      talkBtn.textContent = "⏺️ Recording… release to send";
-    });
-    talkBtn.addEventListener("mouseup", async () => {
-      await stopRecording();
-      talkBtn.textContent = "🎤 Hold to talk";
-      if (!chunks.length) {
-          transcriptEl.textContent = "No audio captured. Try again.";
-      return;
-      }
-      const blob = new Blob(chunks, { type: mediaRecorder.mimeType || chunks[0].type || "audio/webm" });
-
-      await sendToServer(blob);
-    });
-    
-    resetBtn.addEventListener("click", async () => {
-
-    if (!sessionId) {
-        replyEl.textContent = "No active session to reset.";
-        return;
-    }
-
-    try {
-        await fetch("/reset", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ session_id: sessionId })
-        });
-    } catch (e) {
-        console.error("Reset error:", e);
-    }
-
-    // Clear browser session
-    sessionId = "";
-    localStorage.removeItem("sessionId");
-
-    // Clear UI
-    transcriptEl.textContent = "—";
-    replyEl.textContent = "Conversation reset. Sag: Hallo 🙂";
-    player.src = "";
+talkBtn.addEventListener("touchstart", async (e) => {
+  e.preventDefault();
+  try {
+    await startRecording();
+  } catch {}
 });
 
-  </script>
+talkBtn.addEventListener("touchend", async (e) => {
+  e.preventDefault();
+  await stopRecording();
+  if (!chunks.length) return;
+  const blob = new Blob(chunks, { type: mediaRecorder.mimeType });
+  await sendToServer(blob);
+});
+
+resetBtn.addEventListener("click", async () => {
+  await fetch("/reset", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: sessionId })
+  });
+  sessionId = "";
+  localStorage.removeItem("sessionId");
+  transcriptEl.textContent = "—";
+  replyEl.textContent = "Conversation reset.";
+  player.src = "";
+});
+</script>
+
 </body>
 </html>

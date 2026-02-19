@@ -100,6 +100,7 @@
       let mediaRecorder = null;
       let chunks = [];
       let isRecording = false;
+      let currentStream = null;
 
       let sessionId = localStorage.getItem("sessionId") || "";
 
@@ -121,6 +122,8 @@
         let stream;
         try {
           stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          currentStream = stream;
+
         } catch (err) {
           micStatusEl.textContent = `❌ Mic blocked: ${err.name} — ${err.message || ""}`;
           throw err;
@@ -157,13 +160,30 @@
         micStatusEl.textContent = "✅ Recording…";
       }
 
-      async function stopRecording() {
-        if (!mediaRecorder) return;
-        return new Promise((resolve) => {
-          mediaRecorder.onstop = () => resolve();
-          mediaRecorder.stop();
-        });
+async function stopRecording() {
+  if (!mediaRecorder) return;
+
+  return new Promise((resolve) => {
+    mediaRecorder.onstop = () => {
+      // ✅ stop mic tracks so next recording works on iOS
+      if (currentStream) {
+        currentStream.getTracks().forEach(t => t.stop());
+        currentStream = null;
       }
+      mediaRecorder = null;
+      resolve();
+    };
+
+    // ✅ Ask recorder to flush final chunk (helps iOS)
+    try { mediaRecorder.requestData(); } catch {}
+
+    // Small delay helps iOS deliver the last packet
+    setTimeout(() => {
+      try { mediaRecorder.stop(); } catch { resolve(); }
+    }, 120);
+  });
+}
+
 
       async function sendToServer(blob) {
         transcriptEl.textContent = "Sending…";
@@ -257,7 +277,10 @@
           return;
         }
 
-        const blob = new Blob(chunks, { type: (mediaRecorder && mediaRecorder.mimeType) || "audio/webm" });
+        const blobType = (chunks[0] && chunks[0].type) ? chunks[0].type : "audio/webm";
+        const blob = new Blob(chunks, { type: blobType });
+        console.log("Recorded chunks:", chunks.length, "size:", chunks.reduce((s,c)=>s+c.size,0));
+
         await sendToServer(blob);
       }
 

@@ -1,148 +1,287 @@
 <!DOCTYPE html>
-<html>
+<html lang="de">
 <head>
-<meta charset="UTF-8">
-<title>DeutschCoach</title>
-<style>
-body { font-family: sans-serif; max-width: 600px; margin: 40px auto; }
-button { width: 100%; padding: 16px; margin: 8px 0; font-size: 18px; }
-.box { border: 1px solid #ccc; padding: 12px; margin-top: 10px; border-radius: 8px; }
-#talkBtn { touch-action: none; }
-</style>
-</head>
-<body>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>DeutschCoach (Österreich)</title>
 
-<h1>DeutschCoach (Österreich)</h1>
+  <style>
+    :root { color-scheme: light; }
 
-<button id="talkBtn">🎤 Hold to talk</button>
-<button id="resetBtn">🔄 Reset Conversation</button>
-
-<div class="box">
-<b>Mic status</b>
-<div id="micStatus">—</div>
-</div>
-
-<div class="box">
-<b>You said</b>
-<div id="transcript">—</div>
-</div>
-
-<div class="box">
-<b>Coach</b>
-<div id="reply">—</div>
-</div>
-
-<audio id="player" controls></audio>
-
-<script>
-let mediaRecorder;
-let chunks = [];
-let sessionId = localStorage.getItem("sessionId") || "";
-
-const talkBtn = document.getElementById("talkBtn");
-const resetBtn = document.getElementById("resetBtn");
-const transcriptEl = document.getElementById("transcript");
-const replyEl = document.getElementById("reply");
-const micStatusEl = document.getElementById("micStatus");
-const player = document.getElementById("player");
-
-async function startRecording() {
-  micStatusEl.textContent = "Requesting microphone…";
-  transcriptEl.textContent = "Listening…";
-  replyEl.textContent = "—";
-  chunks = [];
-
-  let stream;
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  } catch (err) {
-    micStatusEl.textContent = `❌ Mic blocked: ${err.name}`;
-    throw err;
-  }
-
-  const candidates = ["audio/webm;codecs=opus","audio/webm","audio/mp4"];
-  let chosen = "";
-  for (const t of candidates) {
-    if (window.MediaRecorder && MediaRecorder.isTypeSupported(t)) {
-      chosen = t;
-      break;
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      margin: 0;
+      padding: 18px;
+      padding-bottom: calc(18px + env(safe-area-inset-bottom));
+      background: #fff;
     }
-  }
 
-  if (!window.MediaRecorder) {
-    micStatusEl.textContent = "❌ MediaRecorder not supported on this iOS.";
-    throw new Error("MediaRecorderNotAvailable");
-  }
+    .container {
+      max-width: 640px;
+      margin: 0 auto;
+    }
 
-  mediaRecorder = chosen ? new MediaRecorder(stream, { mimeType: chosen }) : new MediaRecorder(stream);
-  mediaRecorder.ondataavailable = (e) => {
-    if (e.data.size > 0) chunks.push(e.data);
-  };
-  mediaRecorder.start();
-  micStatusEl.textContent = "✅ Recording…";
-}
+    h1 {
+      font-size: 28px;
+      margin: 10px 0 14px;
+    }
 
-async function stopRecording() {
-  if (!mediaRecorder) return;
-  return new Promise(resolve => {
-    mediaRecorder.onstop = resolve;
-    mediaRecorder.stop();
-  });
-}
+    .row { margin: 10px 0; }
 
-async function sendToServer(blob) {
-  transcriptEl.textContent = "Sending…";
+    button, select {
+      width: 100%;
+      font-size: 18px;
+      padding: 14px;
+      border-radius: 12px;
+      border: 1px solid #ddd;
+      background: #f4f4f4;
+    }
 
-  const fd = new FormData();
-  const ext = blob.type.includes("mp4") ? "mp4" : "webm";
-  fd.append("audio", blob, `speech.${ext}`);
-  fd.append("mode", "chat");
-  fd.append("session_id", sessionId);
+    button:active { transform: scale(0.99); }
 
-  const res = await fetch("/talk", { method: "POST", body: fd });
-  const data = await res.json();
+    .box {
+      border: 1px solid #ddd;
+      padding: 12px;
+      margin-top: 10px;
+      border-radius: 12px;
+      background: #fff;
+    }
 
-  if (data.session_id) {
-    sessionId = data.session_id;
-    localStorage.setItem("sessionId", sessionId);
-  }
+    .label {
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
 
-  transcriptEl.textContent = data.transcript;
-  replyEl.textContent = data.reply;
+    #talkBtn { touch-action: none; }
 
-  if (data.audio_b64) {
-    player.src = "data:audio/mp3;base64," + data.audio_b64;
-  }
-}
+    audio { width: 100%; margin-top: 10px; }
+    .small { opacity: 0.65; font-size: 12px; margin-top: 6px; }
+  </style>
+</head>
 
-talkBtn.addEventListener("touchstart", async (e) => {
-  e.preventDefault();
-  try {
-    await startRecording();
-  } catch {}
-});
+<body>
+  <div class="container">
+    <h1>DeutschCoach (Österreich)</h1>
 
-talkBtn.addEventListener("touchend", async (e) => {
-  e.preventDefault();
-  await stopRecording();
-  if (!chunks.length) return;
-  const blob = new Blob(chunks, { type: mediaRecorder.mimeType });
-  await sendToServer(blob);
-});
+    <div class="row">
+      <label class="label" for="mode">Mode</label>
+      <select id="mode">
+        <option value="chat">🗣 Chat</option>
+        <option value="correct">✏️ Correct my sentence</option>
+        <option value="roleplay">🎭 Roleplay (Bäckerei/Schule)</option>
+        <option value="quiz">🧠 Mini quiz</option>
+      </select>
+      <div class="small">Tipp: Für iPhone/iPad bitte in Safari öffnen.</div>
+    </div>
 
-resetBtn.addEventListener("click", async () => {
-  await fetch("/reset", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ session_id: sessionId })
-  });
-  sessionId = "";
-  localStorage.removeItem("sessionId");
-  transcriptEl.textContent = "—";
-  replyEl.textContent = "Conversation reset.";
-  player.src = "";
-});
-</script>
+    <div class="row">
+      <button id="talkBtn">🎤 Hold to talk</button>
+      <button id="resetBtn">🔄 Reset Conversation</button>
+    </div>
 
+    <div class="box">
+      <div class="label">Mic status</div>
+      <div id="micStatus">—</div>
+    </div>
+
+    <div class="box">
+      <div class="label">You said</div>
+      <div id="transcript">—</div>
+    </div>
+
+    <div class="box">
+      <div class="label">Coach</div>
+      <div id="reply">—</div>
+    </div>
+
+    <audio id="player" controls></audio>
+
+    <script>
+      let mediaRecorder = null;
+      let chunks = [];
+      let isRecording = false;
+
+      let sessionId = localStorage.getItem("sessionId") || "";
+
+      const talkBtn = document.getElementById("talkBtn");
+      const resetBtn = document.getElementById("resetBtn");
+      const modeEl = document.getElementById("mode");
+
+      const micStatusEl = document.getElementById("micStatus");
+      const transcriptEl = document.getElementById("transcript");
+      const replyEl = document.getElementById("reply");
+      const player = document.getElementById("player");
+
+      async function startRecording() {
+        micStatusEl.textContent = "Requesting microphone…";
+        transcriptEl.textContent = "Listening…";
+        replyEl.textContent = "—";
+        chunks = [];
+
+        let stream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (err) {
+          micStatusEl.textContent = `❌ Mic blocked: ${err.name} — ${err.message || ""}`;
+          throw err;
+        }
+
+        if (!window.MediaRecorder) {
+          micStatusEl.textContent = "❌ MediaRecorder not supported on this device.";
+          throw new Error("MediaRecorderNotAvailable");
+        }
+
+        // Choose best supported mime type (iOS can be picky)
+        const candidates = [
+          "audio/webm;codecs=opus",
+          "audio/webm",
+          "audio/mp4",
+          "audio/aac"
+        ];
+        let chosen = "";
+        for (const t of candidates) {
+          if (MediaRecorder.isTypeSupported(t)) { chosen = t; break; }
+        }
+
+        mediaRecorder = chosen ? new MediaRecorder(stream, { mimeType: chosen }) : new MediaRecorder(stream);
+
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) chunks.push(e.data);
+        };
+
+        mediaRecorder.onerror = (e) => {
+          micStatusEl.textContent = `❌ Recorder error: ${e.error?.name || "unknown"}`;
+        };
+
+        mediaRecorder.start();
+        micStatusEl.textContent = "✅ Recording…";
+      }
+
+      async function stopRecording() {
+        if (!mediaRecorder) return;
+        return new Promise((resolve) => {
+          mediaRecorder.onstop = () => resolve();
+          mediaRecorder.stop();
+        });
+      }
+
+      async function sendToServer(blob) {
+        transcriptEl.textContent = "Sending…";
+
+        const fd = new FormData();
+
+        // pick filename extension based on blob type
+        const mime = blob.type || "";
+        let ext = "webm";
+        if (mime.includes("mp4")) ext = "mp4";
+        else if (mime.includes("ogg")) ext = "ogg";
+        else if (mime.includes("wav")) ext = "wav";
+        else if (mime.includes("mpeg")) ext = "mp3";
+
+        fd.append("audio", blob, `speech.${ext}`);
+        fd.append("mode", modeEl.value);
+        fd.append("session_id", sessionId);
+
+        // timeout so UI doesn't hang forever
+        const controller = new AbortController();
+        const t = setTimeout(() => controller.abort(), 45000);
+
+        try {
+          const res = await fetch("/talk", {
+            method: "POST",
+            body: fd,
+            signal: controller.signal
+          });
+
+          if (!res.ok) {
+            const text = await res.text();
+            transcriptEl.textContent = `Server error (${res.status})`;
+            replyEl.textContent = text.slice(0, 400);
+            micStatusEl.textContent = "❌ Send failed (server)";
+            return;
+          }
+
+          const data = await res.json();
+
+          if (data.session_id) {
+            sessionId = data.session_id;
+            localStorage.setItem("sessionId", sessionId);
+          }
+
+          transcriptEl.textContent = data.transcript || "—";
+          replyEl.textContent = data.reply || "—";
+
+          if (data.audio_b64) {
+            player.src = "data:audio/mp3;base64," + data.audio_b64;
+            // Try autoplay (may be blocked on iOS; manual play still works)
+            try { await player.play(); } catch {}
+          }
+
+          micStatusEl.textContent = "✅ Done";
+        } catch (err) {
+          micStatusEl.textContent = "❌ Send failed";
+          replyEl.textContent =
+            err.name === "AbortError"
+              ? "Timed out waiting for server."
+              : (err.message || String(err));
+        } finally {
+          clearTimeout(t);
+        }
+      }
+
+      // Unified hold-to-talk (works on Windows + iOS)
+      talkBtn.addEventListener("pointerdown", async (e) => {
+        e.preventDefault();
+        if (isRecording) return;
+
+        try {
+          await startRecording();
+          isRecording = true;
+          talkBtn.textContent = "⏺️ Recording… release to send";
+        } catch (err) {
+          replyEl.textContent = "Mic start failed (see Mic status).";
+        }
+      });
+
+      async function finishRecording(e) {
+        e.preventDefault();
+        if (!isRecording) return;
+
+        await stopRecording();
+        isRecording = false;
+        talkBtn.textContent = "🎤 Hold to talk";
+
+        if (!chunks.length) {
+          transcriptEl.textContent = "No audio captured. Try again.";
+          micStatusEl.textContent = "❌ No audio";
+          return;
+        }
+
+        const blob = new Blob(chunks, { type: (mediaRecorder && mediaRecorder.mimeType) || "audio/webm" });
+        await sendToServer(blob);
+      }
+
+      talkBtn.addEventListener("pointerup", finishRecording);
+      talkBtn.addEventListener("pointercancel", finishRecording);
+
+      // Reset conversation (server + browser)
+      resetBtn.addEventListener("click", async () => {
+        try {
+          await fetch("/reset", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ session_id: sessionId })
+          });
+        } catch {}
+
+        sessionId = "";
+        localStorage.removeItem("sessionId");
+        transcriptEl.textContent = "—";
+        replyEl.textContent = "Conversation reset. Sag: „Hallo!“ 🙂";
+        micStatusEl.textContent = "—";
+        player.src = "";
+      });
+    </script>
+  </div>
 </body>
 </html>

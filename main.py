@@ -4,22 +4,33 @@ import uuid
 import traceback
 from typing import Dict, List
 
-from fastapi import FastAPI, UploadFile, File, Form, Body, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import FastAPI, UploadFile, File, Form, Body, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 
 from openai import OpenAI
 
+
+# -------------------------
+# LOGIN CONFIG (as requested)
+# -------------------------
+LOGIN_USERNAME = "Sanjit"
+LOGIN_PASSWORD = "SanjitDeutchKurz2018"
+
+# IMPORTANT: Set this in Render Environment as SESSION_SECRET (long random string)
+SESSION_SECRET = os.environ.get("SESSION_SECRET", "dev-insecure-change-me")
+
+
 app = FastAPI()
 
-# CORS (helps with stricter clients/browsers)
+# Signed cookie sessions
 app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # can restrict later
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    SessionMiddleware,
+    secret_key=SESSION_SECRET,
+    session_cookie="deutschcoach_session",
+    same_site="lax",
+    https_only=True,   # Render is HTTPS
 )
 
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
@@ -27,12 +38,54 @@ client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
+def is_logged_in(request: Request) -> bool:
+    return bool(request.session.get("logged_in"))
+
+
+def require_login(request: Request):
+    if not is_logged_in(request):
+        raise HTTPException(status_code=401, detail="Not logged in")
+
+
+# -------------------------
+# PAGES
+# -------------------------
+@app.get("/login")
+async def login_page(request: Request):
+    if is_logged_in(request):
+        return RedirectResponse("/", status_code=302)
+    return FileResponse("static/login.html")
+
+
+@app.post("/login")
+async def login_submit(
+    request: Request,
+    username: str = Form(""),
+    password: str = Form("")
+):
+    if username == LOGIN_USERNAME and password == LOGIN_PASSWORD:
+        request.session["logged_in"] = True
+        return RedirectResponse("/", status_code=302)
+
+    return RedirectResponse("/login?error=1", status_code=302)
+
+
+@app.get("/logout")
+async def logout(request: Request):
+    request.session.clear()
+    return RedirectResponse("/login", status_code=302)
+
+
 @app.get("/")
-async def root():
+async def root(request: Request):
+    if not is_logged_in(request):
+        return RedirectResponse("/login", status_code=302)
     return FileResponse("static/index.html")
 
 
-# ---- Teacher prompt (Austrian-flavoured, kid-friendly) ----
+# -------------------------
+# COACH LOGIC
+# -------------------------
 SYSTEM_PROMPT = """Du bist 'DeutschCoach', eine freundliche Deutschlehrerin / ein freundlicher Deutschlehrer
 für ein Volksschulkind (A1/A1+). Sprich Deutsch in österreichischer Variante (de-AT).
 
@@ -69,7 +122,6 @@ def mode_instruction(mode: str) -> str:
     return "Mode: Chat über Alltag/Schule. Stelle pro Antwort genau eine Frage."
 
 
-# ---- Session memory ----
 SESSIONS: Dict[str, List[dict]] = {}
 MAX_TURNS = 6
 MIN_AUDIO_BYTES = 1200
@@ -77,10 +129,13 @@ MIN_AUDIO_BYTES = 1200
 
 @app.post("/talk")
 async def talk(
+    request: Request,
     audio: UploadFile = File(...),
     mode: str = Form("chat"),
     session_id: str = Form("")
 ):
+    require_login(request)
+
     try:
         audio_bytes = await audio.read()
         print("UPLOAD:", audio.filename, "bytes=", len(audio_bytes))
@@ -93,14 +148,12 @@ async def talk(
 
         history = SESSIONS.get(session_id, [])
 
-        # Speech-to-text
         transcript = client.audio.transcriptions.create(
             model="gpt-4o-mini-transcribe",
             file=(audio.filename or "speech.webm", audio_bytes),
         )
         user_text = transcript.text.strip()
 
-        # Chat with memory
         messages = [{"role": "system", "content": SYSTEM_PROMPT + "\n" + mode_instruction(mode)}]
         messages.extend(history)
         messages.append({"role": "user", "content": user_text})
@@ -112,13 +165,11 @@ async def talk(
         )
         reply_text = chat.choices[0].message.content.strip()
 
-        # Update memory
         history.append({"role": "user", "content": user_text})
         history.append({"role": "assistant", "content": reply_text})
         history = history[-MAX_TURNS * 2:]
         SESSIONS[session_id] = history
 
-        # Text-to-speech
         tts = client.audio.speech.create(
             model="gpt-4o-mini-tts",
             voice="marin",
@@ -141,7 +192,8 @@ async def talk(
 
 
 @app.post("/reset")
-async def reset(payload: dict = Body(...)):
+async def reset(request: Request, payload: dict = Body(...)):
+    require_login(request)
     sid = (payload.get("session_id") or "").strip()
     if sid in SESSIONS:
         del SESSIONS[sid]

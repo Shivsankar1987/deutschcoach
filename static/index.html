@@ -7,7 +7,6 @@
 
   <style>
     :root { color-scheme: light; }
-
     body {
       font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
       margin: 0;
@@ -15,19 +14,11 @@
       padding-bottom: calc(18px + env(safe-area-inset-bottom));
       background: #fff;
     }
-
-    .container {
-      max-width: 640px;
-      margin: 0 auto;
-    }
-
-    h1 {
-      font-size: 28px;
-      margin: 10px 0 14px;
-    }
-
+    .container { max-width: 640px; margin: 0 auto; }
+    .topbar { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+    h1 { font-size: 28px; margin: 10px 0 14px; }
+    a { color:#0b57d0; text-decoration:none; font-weight:600; }
     .row { margin: 10px 0; }
-
     button, select {
       width: 100%;
       font-size: 18px;
@@ -36,9 +27,7 @@
       border: 1px solid #ddd;
       background: #f4f4f4;
     }
-
     button:active { transform: scale(0.99); }
-
     .box {
       border: 1px solid #ddd;
       padding: 12px;
@@ -46,29 +35,26 @@
       border-radius: 12px;
       background: #fff;
     }
-
-    .label {
-      font-weight: 700;
-      margin-bottom: 6px;
-    }
-
+    .label { font-weight: 700; margin-bottom: 6px; }
     #talkBtn { touch-action: none; }
-
     audio { width: 100%; margin-top: 10px; }
-    .small { opacity: 0.65; font-size: 12px; margin-top: 6px; }
+    .small { opacity:0.65; font-size: 12px; margin-top: 6px; }
   </style>
 </head>
 
 <body>
   <div class="container">
-    <h1>DeutschCoach (Österreich)</h1>
+    <div class="topbar">
+      <h1>DeutschCoach (Österreich)</h1>
+      <a href="/logout">Logout</a>
+    </div>
 
     <div class="row">
       <label class="label" for="mode">Mode</label>
       <select id="mode">
         <option value="chat">🗣 Chat</option>
         <option value="correct">✏️ Correct my sentence</option>
-        <option value="roleplay">🎭 Roleplay (Bäckerei/Schule)</option>
+        <option value="roleplay">🎭 Roleplay</option>
         <option value="quiz">🧠 Mini quiz</option>
       </select>
       <div class="small">Tipp: Für iPhone/iPad bitte in Safari öffnen.</div>
@@ -100,7 +86,7 @@
       let mediaRecorder = null;
       let chunks = [];
       let isRecording = false;
-      let currentStream = null;
+      let currentStream = null; // ✅ important for iOS multi-turn
 
       let sessionId = localStorage.getItem("sessionId") || "";
 
@@ -122,25 +108,19 @@
         let stream;
         try {
           stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          currentStream = stream;
-
         } catch (err) {
           micStatusEl.textContent = `❌ Mic blocked: ${err.name} — ${err.message || ""}`;
           throw err;
         }
+
+        currentStream = stream;
 
         if (!window.MediaRecorder) {
           micStatusEl.textContent = "❌ MediaRecorder not supported on this device.";
           throw new Error("MediaRecorderNotAvailable");
         }
 
-        // Choose best supported mime type (iOS can be picky)
-        const candidates = [
-          "audio/webm;codecs=opus",
-          "audio/webm",
-          "audio/mp4",
-          "audio/aac"
-        ];
+        const candidates = ["audio/webm;codecs=opus","audio/webm","audio/mp4","audio/aac"];
         let chosen = "";
         for (const t of candidates) {
           if (MediaRecorder.isTypeSupported(t)) { chosen = t; break; }
@@ -160,37 +140,34 @@
         micStatusEl.textContent = "✅ Recording…";
       }
 
-async function stopRecording() {
-  if (!mediaRecorder) return;
+      async function stopRecording() {
+        if (!mediaRecorder) return;
 
-  return new Promise((resolve) => {
-    mediaRecorder.onstop = () => {
-      // ✅ stop mic tracks so next recording works on iOS
-      if (currentStream) {
-        currentStream.getTracks().forEach(t => t.stop());
-        currentStream = null;
+        return new Promise((resolve) => {
+          mediaRecorder.onstop = () => {
+            // ✅ stop mic tracks so next recording works on iOS
+            if (currentStream) {
+              currentStream.getTracks().forEach(t => t.stop());
+              currentStream = null;
+            }
+            mediaRecorder = null;
+            resolve();
+          };
+
+          // ✅ flush final chunk (helps iOS)
+          try { mediaRecorder.requestData(); } catch {}
+
+          setTimeout(() => {
+            try { mediaRecorder.stop(); } catch { resolve(); }
+          }, 120);
+        });
       }
-      mediaRecorder = null;
-      resolve();
-    };
-
-    // ✅ Ask recorder to flush final chunk (helps iOS)
-    try { mediaRecorder.requestData(); } catch {}
-
-    // Small delay helps iOS deliver the last packet
-    setTimeout(() => {
-      try { mediaRecorder.stop(); } catch { resolve(); }
-    }, 120);
-  });
-}
-
 
       async function sendToServer(blob) {
         transcriptEl.textContent = "Sending…";
 
         const fd = new FormData();
 
-        // pick filename extension based on blob type
         const mime = blob.type || "";
         let ext = "webm";
         if (mime.includes("mp4")) ext = "mp4";
@@ -202,16 +179,16 @@ async function stopRecording() {
         fd.append("mode", modeEl.value);
         fd.append("session_id", sessionId);
 
-        // timeout so UI doesn't hang forever
         const controller = new AbortController();
         const t = setTimeout(() => controller.abort(), 45000);
 
         try {
-          const res = await fetch("/talk", {
-            method: "POST",
-            body: fd,
-            signal: controller.signal
-          });
+          const res = await fetch("/talk", { method: "POST", body: fd, signal: controller.signal });
+
+          if (res.status === 401) {
+            window.location.href = "/login";
+            return;
+          }
 
           if (!res.ok) {
             const text = await res.text();
@@ -233,7 +210,6 @@ async function stopRecording() {
 
           if (data.audio_b64) {
             player.src = "data:audio/mp3;base64," + data.audio_b64;
-            // Try autoplay (may be blocked on iOS; manual play still works)
             try { await player.play(); } catch {}
           }
 
@@ -249,7 +225,7 @@ async function stopRecording() {
         }
       }
 
-      // Unified hold-to-talk (works on Windows + iOS)
+      // Pointer events = Windows + iOS
       talkBtn.addEventListener("pointerdown", async (e) => {
         e.preventDefault();
         if (isRecording) return;
@@ -258,7 +234,7 @@ async function stopRecording() {
           await startRecording();
           isRecording = true;
           talkBtn.textContent = "⏺️ Recording… release to send";
-        } catch (err) {
+        } catch {
           replyEl.textContent = "Mic start failed (see Mic status).";
         }
       });
@@ -279,15 +255,12 @@ async function stopRecording() {
 
         const blobType = (chunks[0] && chunks[0].type) ? chunks[0].type : "audio/webm";
         const blob = new Blob(chunks, { type: blobType });
-        console.log("Recorded chunks:", chunks.length, "size:", chunks.reduce((s,c)=>s+c.size,0));
-
         await sendToServer(blob);
       }
 
       talkBtn.addEventListener("pointerup", finishRecording);
       talkBtn.addEventListener("pointercancel", finishRecording);
 
-      // Reset conversation (server + browser)
       resetBtn.addEventListener("click", async () => {
         try {
           await fetch("/reset", {

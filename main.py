@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from openai import OpenAI
+from fastapi import Body
 
 
 # -------------------------
@@ -277,3 +278,37 @@ async def reset(request: Request, payload: dict = Body(...)):
     if sid in SESSIONS:
         del SESSIONS[sid]
     return {"status": "reset"}
+
+from fastapi import Body
+
+@app.post("/text")
+async def text_chat(request: Request, payload: dict = Body(...)):
+    require_login(request)
+
+    mode = payload.get("mode", "chat")
+    session_id = payload.get("session_id") or str(uuid.uuid4())
+    user_text = (payload.get("text") or "").strip()
+
+    if not user_text:
+        raise HTTPException(status_code=400, detail="Empty text")
+
+    history = SESSIONS.get(session_id, [])
+
+    messages = [{"role": "system", "content": SYSTEM_PROMPT + "\n" + mode_instruction(mode)}]
+    messages.extend(history)
+    messages.append({"role": "user", "content": user_text})
+
+    chat = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=messages,
+        temperature=0.3,
+    )
+
+    reply_text = chat.choices[0].message.content.strip()
+
+    history.append({"role": "user", "content": user_text})
+    history.append({"role": "assistant", "content": reply_text})
+    history = history[-MAX_TURNS * 2:]
+    SESSIONS[session_id] = history
+
+    return {"session_id": session_id, "reply": reply_text}

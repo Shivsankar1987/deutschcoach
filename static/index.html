@@ -69,6 +69,7 @@
         <option value="correct">✏️ Correct my sentence</option>
         <option value="roleplay">🎭 Roleplay</option>
         <option value="quiz">🧠 Mini quiz</option>
+        <option value="dictation">✍️ Dictation (Listen & Write)</option>
       </select>
       <div class="small">Tipp: Für iPhone/iPad bitte in Safari öffnen.</div>
     </div>
@@ -88,10 +89,21 @@
       <div id="transcript">—</div>
     </div>
 
-    <div class="box">
-      <div class="label">Coach</div>
-      <div id="reply">—</div>
-    </div>
+<div class="box">
+  <div class="label">Coach</div>
+  <div id="reply">—</div>
+</div>
+
+<!-- ✍️ Writing area for dictation -->
+<div class="box">
+  <div class="label">Write what you heard</div>
+  <textarea id="writeBox"
+            rows="6"
+            style="width:100%;font-size:16px;padding:10px;border-radius:12px;border:1px solid #ddd;"></textarea>
+  <button id="sendTextBtn" style="margin-top:10px;">
+    📩 Send for correction
+  </button>
+</div>
 
     <audio id="player" controls></audio>
 
@@ -365,6 +377,38 @@ if (blobType.includes("webm")) {
         micStatusEl.textContent = "—";
         player.src = "";
       });
+
+      const writeBox = document.getElementById("writeBox");
+const sendTextBtn = document.getElementById("sendTextBtn");
+
+sendTextBtn.addEventListener("click", async () => {
+  const text = writeBox.value.trim();
+  if (!text) return;
+
+  const res = await fetch("/text", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      text: text,
+      mode: modeEl.value,
+      session_id: sessionId
+    })
+  });
+
+  if (res.status === 401) {
+    window.location.href = "/login";
+    return;
+  }
+
+  const data = await res.json();
+
+  if (data.session_id) {
+    sessionId = data.session_id;
+    localStorage.setItem("sessionId", sessionId);
+  }
+
+  replyEl.textContent = data.reply || "—";
+});
     </script>
   </div>
 </body>

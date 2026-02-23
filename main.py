@@ -150,8 +150,8 @@ def mode_instruction(mode: str) -> str:
             "Mode: Mini-Quiz. Stelle genau 3 sehr kurze Fragen nacheinander. "
             "Warte jeweils auf die Antwort."
         )
-     if mode == "dictation":
-          return """
+    if mode == "dictation":
+        return """
 Mode: DIKTAT (Hören & Schreiben – Volksschule, 7 Jahre).
 
 TOPIC-REGEL:

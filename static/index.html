@@ -36,7 +36,20 @@
       background: #fff;
     }
     .label { font-weight: 700; margin-bottom: 6px; }
-    #talkBtn { touch-action: none; }
+  /* 🔥 TALK BUTTON FIXES */
+  #talkBtn {
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+
+  #talkBtn.recording {
+    background: #d32f2f;
+    color: white;
+    border-color: #b71c1c;
+  }
     audio { width: 100%; margin-top: 10px; }
     .small { opacity:0.65; font-size: 12px; margin-top: 6px; }
   </style>
@@ -297,6 +310,7 @@ async function convertToWav(blob) {
           await startRecording();
           isRecording = true;
           talkBtn.textContent = "⏺️ Recording… release to send";
+          talkBtn.classList.add("recording");
         } catch {
           replyEl.textContent = "Mic start failed (see Mic status).";
         }
@@ -309,6 +323,7 @@ async function convertToWav(blob) {
         await stopRecording();
         isRecording = false;
         talkBtn.textContent = "🎤 Hold to talk";
+        talkBtn.classList.remove("recording");
 
         if (!chunks.length) {
           transcriptEl.textContent = "No audio captured. Try again.";

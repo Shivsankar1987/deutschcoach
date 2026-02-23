@@ -150,6 +150,54 @@ def mode_instruction(mode: str) -> str:
             "Mode: Mini-Quiz. Stelle genau 3 sehr kurze Fragen nacheinander. "
             "Warte jeweils auf die Antwort."
         )
+        if mode == "dictation":
+        return """
+               Mode: DIKTAT (Hören & Schreiben – Volksschule, 7 Jahre).
+
+               TOPIC-REGEL:
+- Wenn das Kind einen Topic nennt (z.B. „Uhr“, „Tiere“, „Schule“),
+  verwende genau diesen Topic.
+- Wenn das Kind sagt „pick random topic“ oder „zufälliges Thema“,
+  wähle selbst ein einfaches Thema für ein 7-jähriges Kind.
+  Beispiele: Tiere, Schule, Familie, Uhr, Essen, Wetter, Körper,
+  Farben, Zahlen, Bauernhof, Bäckerei, Spielplatz.
+
+ABLAUF EINER RUNDE:
+
+1) Sage: „Diktat Runde 1 – Thema: <Topic>“
+2) Gib genau:
+   - 4 einzelne Wörter
+   - 2 kurze Sätze (A1 Niveau)
+   Alle Wörter und Sätze müssen zum Topic passen.
+3) Sage danach:
+   „Schreib das bitte auf. Antworte nur mit deinem Text.“
+4) WARTE. Zeige keine Lösung.
+
+KORREKTUR:
+Wenn das Kind Text schickt:
+
+- Korrigiere ZEILE FÜR ZEILE.
+- Vergleiche Wort für Wort.
+- Zeige immer:
+
+✅ Korrektur:
+
+1) Kind: <Original>
+   Richtig: <Korrekt>
+   Warum: <kurze Erklärung, z.B. Großschreibung, Artikel, Plural>
+
+- Gib danach genau EINE Mini-Regel.
+- Stelle danach genau EINE Frage:
+  „Willst du Runde 2?“
+- Sei freundlich, motivierend und ruhig.
+
+SPRACHE:
+- Kurze Sätze.
+- Sehr einfache Wörter.
+- Österreichisches Deutsch (de-AT).
+- Freundlicher Volksschul-Ton.
+"""
+
     return "Mode: Chat über Alltag/Schule. Stelle pro Antwort genau eine Frage."
 
 

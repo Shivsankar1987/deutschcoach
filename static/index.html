@@ -99,6 +99,69 @@
       const replyEl = document.getElementById("reply");
       const player = document.getElementById("player");
 
+async function blobToArrayBuffer(blob) {
+  return await blob.arrayBuffer();
+}
+
+function writeWavHeader(view, sampleRate, numChannels, numFrames) {
+  const bytesPerSample = 2;
+  const blockAlign = numChannels * bytesPerSample;
+  const byteRate = sampleRate * blockAlign;
+  const dataSize = numFrames * blockAlign;
+
+  function writeString(offset, str) {
+    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+  }
+
+  writeString(0, "RIFF");
+  view.setUint32(4, 36 + dataSize, true);
+  writeString(8, "WAVE");
+  writeString(12, "fmt ");
+  view.setUint32(16, 16, true);        // PCM chunk size
+  view.setUint16(20, 1, true);         // audio format = PCM
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, 16, true);        // bits per sample
+  writeString(36, "data");
+  view.setUint32(40, dataSize, true);
+}
+
+function floatTo16BitPCM(output, offset, input) {
+  for (let i = 0; i < input.length; i++) {
+    let s = Math.max(-1, Math.min(1, input[i]));
+    output.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+    offset += 2;
+  }
+}
+
+async function convertToWav(blob) {
+  const arrayBuffer = await blobToArrayBuffer(blob);
+  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer.slice(0));
+
+  const numChannels = audioBuffer.numberOfChannels;
+  const sampleRate = audioBuffer.sampleRate;
+  const numFrames = audioBuffer.length;
+
+  // Interleave channels
+  const interleaved = new Float32Array(numFrames * numChannels);
+  for (let ch = 0; ch < numChannels; ch++) {
+    const channelData = audioBuffer.getChannelData(ch);
+    for (let i = 0; i < numFrames; i++) {
+      interleaved[i * numChannels + ch] = channelData[i];
+    }
+  }
+
+  const buffer = new ArrayBuffer(44 + numFrames * numChannels * 2);
+  const view = new DataView(buffer);
+  writeWavHeader(view, sampleRate, numChannels, numFrames);
+  floatTo16BitPCM(view, 44, interleaved);
+
+  return new Blob([view], { type: "audio/wav" });
+}
+
       async function startRecording() {
         micStatusEl.textContent = "Requesting microphone…";
         transcriptEl.textContent = "Listening…";
@@ -254,7 +317,17 @@
         }
 
         const blobType = (chunks[0] && chunks[0].type) ? chunks[0].type : "audio/webm";
-        const blob = new Blob(chunks, { type: blobType });
+        let blob = new Blob(chunks, { type: blobType });
+        // ✅ If Windows/Chrome gives webm, convert to WAV for OpenAI reliability
+if (blobType.includes("webm")) {
+  micStatusEl.textContent = "Converting audio…";
+  try {
+    blob = await convertToWav(blob);
+  } catch (e) {
+    // if conversion fails, still try original blob
+    console.warn("WAV conversion failed:", e);
+  }
+}
         await sendToServer(blob);
       }
 

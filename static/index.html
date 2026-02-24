@@ -100,10 +100,6 @@
   <button id="revealBtn" disabled>👁 Reveal</button>
 </div>
 
-    <div class="box">
-      <div class="label">Mic status</div>
-      <div id="micStatus">—</div>
-    </div>
 
     <div class="box">
       <div class="label">You said</div>
@@ -135,7 +131,7 @@
       const resetBtn = document.getElementById("resetBtn");
       const modeEl = document.getElementById("mode");
 
-      const micStatusEl = document.getElementById("micStatus");
+     // const micStatusEl = document.getElementById("micStatus");
       const transcriptEl = document.getElementById("transcript");
       const replyEl = document.getElementById("reply");
       const player = document.getElementById("player");
@@ -233,7 +229,7 @@ updateModeUI(); // run once on load
       // Recording
       // -----------------------------
       async function startRecording() {
-        micStatusEl.textContent = "Requesting microphone…";
+        //micStatusEl.textContent = "Requesting microphone…";
         transcriptEl.textContent = "Listening…";
         if (modeEl.value !== "dictation") replyEl.textContent = "—";
         chunks = [];
@@ -242,14 +238,14 @@ updateModeUI(); // run once on load
         try {
           stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         } catch (err) {
-          micStatusEl.textContent = `❌ Mic blocked: ${err.name} — ${err.message || ""}`;
+          //micStatusEl.textContent = `❌ Mic blocked: ${err.name} — ${err.message || ""}`;
           throw err;
         }
 
         currentStream = stream;
 
         if (!window.MediaRecorder) {
-          micStatusEl.textContent = "❌ MediaRecorder not supported on this device.";
+          //micStatusEl.textContent = "❌ MediaRecorder not supported on this device.";
           throw new Error("MediaRecorderNotAvailable");
         }
 
@@ -266,11 +262,11 @@ updateModeUI(); // run once on load
         };
 
         mediaRecorder.onerror = (e) => {
-          micStatusEl.textContent = `❌ Recorder error: ${e.error?.name || "unknown"}`;
+          //micStatusEl.textContent = `❌ Recorder error: ${e.error?.name || "unknown"}`;
         };
 
         mediaRecorder.start();
-        micStatusEl.textContent = "✅ Recording…";
+        //micStatusEl.textContent = "✅ Recording…";
       }
 
       async function stopRecording() {
@@ -330,7 +326,7 @@ updateModeUI(); // run once on load
             const text = await res.text();
             transcriptEl.textContent = `Server error (${res.status})`;
             replyEl.textContent = text.slice(0, 600);
-            micStatusEl.textContent = "❌ Send failed (server)";
+            //micStatusEl.textContent = "❌ Send failed (server)";
             return;
           }
 
@@ -355,7 +351,7 @@ updateModeUI(); // run once on load
             } else {
               dictStatus.textContent = data.status || "—";
             }
-            micStatusEl.textContent = "✅ Done";
+            //micStatusEl.textContent = "✅ Done";
             return;
           }
 
@@ -367,9 +363,9 @@ updateModeUI(); // run once on load
             try { await player.play(); } catch {}
           }
 
-          micStatusEl.textContent = "✅ Done";
+          //micStatusEl.textContent = "✅ Done";
         } catch (err) {
-          micStatusEl.textContent = "❌ Send failed";
+          //micStatusEl.textContent = "❌ Send failed";
           replyEl.textContent =
             err.name === "AbortError"
               ? "Timed out waiting for server."
@@ -405,7 +401,7 @@ updateModeUI(); // run once on load
 
         if (!chunks.length) {
           transcriptEl.textContent = "No audio captured. Try again.";
-          micStatusEl.textContent = "❌ No audio";
+          //micStatusEl.textContent = "❌ No audio";
           return;
         }
 
@@ -414,7 +410,7 @@ updateModeUI(); // run once on load
 
         // If Windows gives webm, convert to WAV for reliability
         if (blobType.includes("webm")) {
-          micStatusEl.textContent = "Converting audio…";
+          //micStatusEl.textContent = "Converting audio…";
           try {
             blob = await convertToWav(blob);
           } catch (e) {
@@ -513,7 +509,7 @@ updateModeUI(); // run once on load
         localStorage.removeItem("sessionId");
         transcriptEl.textContent = "—";
         replyEl.textContent = "Conversation reset. Sag: „Hallo!“ 🙂";
-        micStatusEl.textContent = "—";
+        //micStatusEl.textContent = "—";
         player.src = "";
 
         dictStatus.textContent = "Select Dictation mode → press Start Dictation.";

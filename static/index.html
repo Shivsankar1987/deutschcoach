@@ -18,6 +18,7 @@
     .topbar { display:flex; align-items:center; justify-content:space-between; gap:10px; }
     h1 { font-size: 28px; margin: 10px 0 14px; }
     a { color:#0b57d0; text-decoration:none; font-weight:600; }
+
     .row { margin: 10px 0; }
     button, select {
       width: 100%;
@@ -28,6 +29,8 @@
       background: #f4f4f4;
     }
     button:active { transform: scale(0.99); }
+    button:disabled { opacity: 0.55; }
+
     .box {
       border: 1px solid #ddd;
       padding: 12px;
@@ -36,22 +39,30 @@
       background: #fff;
     }
     .label { font-weight: 700; margin-bottom: 6px; }
-  /* 🔥 TALK BUTTON FIXES */
-  #talkBtn {
-    touch-action: none;
-    user-select: none;
-    -webkit-user-select: none;
-    -webkit-touch-callout: none;
-    transition: background 0.15s ease, color 0.15s ease;
-  }
-
-  #talkBtn.recording {
-    background: #d32f2f;
-    color: white;
-    border-color: #b71c1c;
-  }
     audio { width: 100%; margin-top: 10px; }
     .small { opacity:0.65; font-size: 12px; margin-top: 6px; }
+
+    /* Talk button: prevent iOS text selection + show recording color */
+    #talkBtn {
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+    #talkBtn.recording {
+      background: #d32f2f;
+      color: white;
+      border-color: #b71c1c;
+    }
+
+    #dictReveal {
+      white-space: pre-wrap;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 14px;
+      line-height: 1.35;
+      margin-top: 8px;
+    }
   </style>
 </head>
 
@@ -66,10 +77,10 @@
       <label class="label" for="mode">Mode</label>
       <select id="mode">
         <option value="chat">🗣 Chat</option>
+        <option value="dictation">✍️ Dictation (Step-by-step)</option>
         <option value="correct">✏️ Correct my sentence</option>
         <option value="roleplay">🎭 Roleplay</option>
         <option value="quiz">🧠 Mini quiz</option>
-        <option value="dictation">✍️ Dictation (Listen & Write)</option>
       </select>
       <div class="small">Tipp: Für iPhone/iPad bitte in Safari öffnen.</div>
     </div>
@@ -77,6 +88,12 @@
     <div class="row">
       <button id="talkBtn">🎤 Hold to talk</button>
       <button id="resetBtn">🔄 Reset Conversation</button>
+    </div>
+
+    <div class="row">
+      <button id="startDictBtn">🧩 Start Dictation</button>
+      <button id="nextItemBtn" disabled>➡️ Next</button>
+      <button id="revealBtn" disabled>👁 Reveal</button>
     </div>
 
     <div class="box">
@@ -89,21 +106,16 @@
       <div id="transcript">—</div>
     </div>
 
-<div class="box">
-  <div class="label">Coach</div>
-  <div id="reply">—</div>
-</div>
+    <div class="box">
+      <div class="label">Coach</div>
+      <div id="reply">—</div>
+    </div>
 
-<!-- ✍️ Writing area for dictation -->
-<div class="box">
-  <div class="label">Write what you heard</div>
-  <textarea id="writeBox"
-            rows="6"
-            style="width:100%;font-size:16px;padding:10px;border-radius:12px;border:1px solid #ddd;"></textarea>
-  <button id="sendTextBtn" style="margin-top:10px;">
-    📩 Send for correction
-  </button>
-</div>
+    <div class="box" id="dictBox">
+      <div class="label">Dictation</div>
+      <div id="dictStatus">Select Dictation mode → press Start Dictation.</div>
+      <div id="dictReveal" style="display:none;"></div>
+    </div>
 
     <audio id="player" controls></audio>
 
@@ -111,7 +123,7 @@
       let mediaRecorder = null;
       let chunks = [];
       let isRecording = false;
-      let currentStream = null; // ✅ important for iOS multi-turn
+      let currentStream = null; // important for iOS multi-turn
 
       let sessionId = localStorage.getItem("sessionId") || "";
 
@@ -124,73 +136,84 @@
       const replyEl = document.getElementById("reply");
       const player = document.getElementById("player");
 
-async function blobToArrayBuffer(blob) {
-  return await blob.arrayBuffer();
-}
+      const startDictBtn = document.getElementById("startDictBtn");
+      const nextItemBtn  = document.getElementById("nextItemBtn");
+      const revealBtn    = document.getElementById("revealBtn");
+      const dictStatus   = document.getElementById("dictStatus");
+      const dictReveal   = document.getElementById("dictReveal");
 
-function writeWavHeader(view, sampleRate, numChannels, numFrames) {
-  const bytesPerSample = 2;
-  const blockAlign = numChannels * bytesPerSample;
-  const byteRate = sampleRate * blockAlign;
-  const dataSize = numFrames * blockAlign;
+      // -----------------------------
+      // WAV conversion helpers (Windows-safe)
+      // -----------------------------
+      async function blobToArrayBuffer(blob) {
+        return await blob.arrayBuffer();
+      }
 
-  function writeString(offset, str) {
-    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
-  }
+      function writeWavHeader(view, sampleRate, numChannels, numFrames) {
+        const bytesPerSample = 2;
+        const blockAlign = numChannels * bytesPerSample;
+        const byteRate = sampleRate * blockAlign;
+        const dataSize = numFrames * blockAlign;
 
-  writeString(0, "RIFF");
-  view.setUint32(4, 36 + dataSize, true);
-  writeString(8, "WAVE");
-  writeString(12, "fmt ");
-  view.setUint32(16, 16, true);        // PCM chunk size
-  view.setUint16(20, 1, true);         // audio format = PCM
-  view.setUint16(22, numChannels, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, byteRate, true);
-  view.setUint16(32, blockAlign, true);
-  view.setUint16(34, 16, true);        // bits per sample
-  writeString(36, "data");
-  view.setUint32(40, dataSize, true);
-}
+        function writeString(offset, str) {
+          for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+        }
 
-function floatTo16BitPCM(output, offset, input) {
-  for (let i = 0; i < input.length; i++) {
-    let s = Math.max(-1, Math.min(1, input[i]));
-    output.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-    offset += 2;
-  }
-}
+        writeString(0, "RIFF");
+        view.setUint32(4, 36 + dataSize, true);
+        writeString(8, "WAVE");
+        writeString(12, "fmt ");
+        view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true);
+        view.setUint16(22, numChannels, true);
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, byteRate, true);
+        view.setUint16(32, blockAlign, true);
+        view.setUint16(34, 16, true);
+        writeString(36, "data");
+        view.setUint32(40, dataSize, true);
+      }
 
-async function convertToWav(blob) {
-  const arrayBuffer = await blobToArrayBuffer(blob);
-  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer.slice(0));
+      function floatTo16BitPCM(output, offset, input) {
+        for (let i = 0; i < input.length; i++) {
+          let s = Math.max(-1, Math.min(1, input[i]));
+          output.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+          offset += 2;
+        }
+      }
 
-  const numChannels = audioBuffer.numberOfChannels;
-  const sampleRate = audioBuffer.sampleRate;
-  const numFrames = audioBuffer.length;
+      async function convertToWav(blob) {
+        const arrayBuffer = await blobToArrayBuffer(blob);
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer.slice(0));
 
-  // Interleave channels
-  const interleaved = new Float32Array(numFrames * numChannels);
-  for (let ch = 0; ch < numChannels; ch++) {
-    const channelData = audioBuffer.getChannelData(ch);
-    for (let i = 0; i < numFrames; i++) {
-      interleaved[i * numChannels + ch] = channelData[i];
-    }
-  }
+        const numChannels = audioBuffer.numberOfChannels;
+        const sampleRate = audioBuffer.sampleRate;
+        const numFrames = audioBuffer.length;
 
-  const buffer = new ArrayBuffer(44 + numFrames * numChannels * 2);
-  const view = new DataView(buffer);
-  writeWavHeader(view, sampleRate, numChannels, numFrames);
-  floatTo16BitPCM(view, 44, interleaved);
+        const interleaved = new Float32Array(numFrames * numChannels);
+        for (let ch = 0; ch < numChannels; ch++) {
+          const channelData = audioBuffer.getChannelData(ch);
+          for (let i = 0; i < numFrames; i++) {
+            interleaved[i * numChannels + ch] = channelData[i];
+          }
+        }
 
-  return new Blob([view], { type: "audio/wav" });
-}
+        const buffer = new ArrayBuffer(44 + numFrames * numChannels * 2);
+        const view = new DataView(buffer);
+        writeWavHeader(view, sampleRate, numChannels, numFrames);
+        floatTo16BitPCM(view, 44, interleaved);
 
+        return new Blob([view], { type: "audio/wav" });
+      }
+
+      // -----------------------------
+      // Recording
+      // -----------------------------
       async function startRecording() {
         micStatusEl.textContent = "Requesting microphone…";
         transcriptEl.textContent = "Listening…";
-        replyEl.textContent = "—";
+        if (modeEl.value !== "dictation") replyEl.textContent = "—";
         chunks = [];
 
         let stream;
@@ -233,7 +256,7 @@ async function convertToWav(blob) {
 
         return new Promise((resolve) => {
           mediaRecorder.onstop = () => {
-            // ✅ stop mic tracks so next recording works on iOS
+            // stop mic tracks so next recording works on iOS
             if (currentStream) {
               currentStream.getTracks().forEach(t => t.stop());
               currentStream = null;
@@ -242,7 +265,7 @@ async function convertToWav(blob) {
             resolve();
           };
 
-          // ✅ flush final chunk (helps iOS)
+          // flush final chunk (helps iOS)
           try { mediaRecorder.requestData(); } catch {}
 
           setTimeout(() => {
@@ -251,6 +274,9 @@ async function convertToWav(blob) {
         });
       }
 
+      // -----------------------------
+      // Send audio to server
+      // -----------------------------
       async function sendToServer(blob) {
         transcriptEl.textContent = "Sending…";
 
@@ -281,7 +307,7 @@ async function convertToWav(blob) {
           if (!res.ok) {
             const text = await res.text();
             transcriptEl.textContent = `Server error (${res.status})`;
-            replyEl.textContent = text.slice(0, 400);
+            replyEl.textContent = text.slice(0, 600);
             micStatusEl.textContent = "❌ Send failed (server)";
             return;
           }
@@ -294,6 +320,24 @@ async function convertToWav(blob) {
           }
 
           transcriptEl.textContent = data.transcript || "—";
+
+          // Dictation: do not show the coach's dictation items
+          if (modeEl.value === "dictation") {
+            if (data.dictation_ready) {
+              dictStatus.textContent = data.status || "Dictation ready. Press Next.";
+              nextItemBtn.disabled = false;
+              revealBtn.disabled = false;
+              dictReveal.style.display = "none";
+              dictReveal.textContent = "";
+              dictReveal.dataset.text = "";
+            } else {
+              dictStatus.textContent = data.status || "—";
+            }
+            micStatusEl.textContent = "✅ Done";
+            return;
+          }
+
+          // Normal modes
           replyEl.textContent = data.reply || "—";
 
           if (data.audio_b64) {
@@ -345,22 +389,95 @@ async function convertToWav(blob) {
 
         const blobType = (chunks[0] && chunks[0].type) ? chunks[0].type : "audio/webm";
         let blob = new Blob(chunks, { type: blobType });
-        // ✅ If Windows/Chrome gives webm, convert to WAV for OpenAI reliability
-if (blobType.includes("webm")) {
-  micStatusEl.textContent = "Converting audio…";
-  try {
-    blob = await convertToWav(blob);
-  } catch (e) {
-    // if conversion fails, still try original blob
-    console.warn("WAV conversion failed:", e);
-  }
-}
+
+        // If Windows gives webm, convert to WAV for reliability
+        if (blobType.includes("webm")) {
+          micStatusEl.textContent = "Converting audio…";
+          try {
+            blob = await convertToWav(blob);
+          } catch (e) {
+            console.warn("WAV conversion failed:", e);
+          }
+        }
+
         await sendToServer(blob);
       }
 
       talkBtn.addEventListener("pointerup", finishRecording);
       talkBtn.addEventListener("pointercancel", finishRecording);
 
+      // -----------------------------
+      // Dictation controls
+      // -----------------------------
+      startDictBtn.addEventListener("click", () => {
+        if (modeEl.value !== "dictation") {
+          dictStatus.textContent = "Please select Dictation mode first.";
+          return;
+        }
+        dictStatus.textContent = "Say the topic (e.g. „Uhr“) — or say: pick random topic. Then Hold to talk.";
+        dictReveal.style.display = "none";
+        dictReveal.textContent = "";
+        dictReveal.dataset.text = "";
+        nextItemBtn.disabled = true;
+        revealBtn.disabled = true;
+      });
+
+      async function requestNextItem() {
+        dictStatus.textContent = "Loading next item…";
+        dictReveal.style.display = "none";
+        dictReveal.textContent = "";
+
+        const res = await fetch("/dictation/next", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id: sessionId })
+        });
+
+        if (res.status === 401) { window.location.href = "/login"; return; }
+
+        if (!res.ok) {
+          const text = await res.text();
+          dictStatus.textContent = "Error: " + text.slice(0, 200);
+          return;
+        }
+
+        const data = await res.json();
+
+        if (data.session_id) {
+          sessionId = data.session_id;
+          localStorage.setItem("sessionId", sessionId);
+        }
+
+        dictStatus.textContent = data.status || "—";
+
+        if (data.audio_b64) {
+          player.src = "data:audio/mp3;base64," + data.audio_b64;
+          try { await player.play(); } catch {}
+        }
+
+        dictReveal.dataset.text = data.reveal_text || "";
+
+        if (data.done) {
+          nextItemBtn.disabled = true;
+          revealBtn.disabled = true;
+        } else {
+          nextItemBtn.disabled = false;
+          revealBtn.disabled = false;
+        }
+      }
+
+      function revealCurrentItem() {
+        const t = dictReveal.dataset.text || "";
+        dictReveal.style.display = "block";
+        dictReveal.textContent = t || "(Nothing to reveal)";
+      }
+
+      nextItemBtn.addEventListener("click", requestNextItem);
+      revealBtn.addEventListener("click", revealCurrentItem);
+
+      // -----------------------------
+      // Reset
+      // -----------------------------
       resetBtn.addEventListener("click", async () => {
         try {
           await fetch("/reset", {
@@ -376,39 +493,14 @@ if (blobType.includes("webm")) {
         replyEl.textContent = "Conversation reset. Sag: „Hallo!“ 🙂";
         micStatusEl.textContent = "—";
         player.src = "";
+
+        dictStatus.textContent = "Select Dictation mode → press Start Dictation.";
+        dictReveal.style.display = "none";
+        dictReveal.textContent = "";
+        dictReveal.dataset.text = "";
+        nextItemBtn.disabled = true;
+        revealBtn.disabled = true;
       });
-
-      const writeBox = document.getElementById("writeBox");
-const sendTextBtn = document.getElementById("sendTextBtn");
-
-sendTextBtn.addEventListener("click", async () => {
-  const text = writeBox.value.trim();
-  if (!text) return;
-
-  const res = await fetch("/text", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      text: text,
-      mode: modeEl.value,
-      session_id: sessionId
-    })
-  });
-
-  if (res.status === 401) {
-    window.location.href = "/login";
-    return;
-  }
-
-  const data = await res.json();
-
-  if (data.session_id) {
-    sessionId = data.session_id;
-    localStorage.setItem("sessionId", sessionId);
-  }
-
-  replyEl.textContent = data.reply || "—";
-});
     </script>
   </div>
 </body>

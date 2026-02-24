@@ -63,6 +63,10 @@
       line-height: 1.35;
       margin-top: 8px;
     }
+
+    #dictControls, #dictBox {
+  display: none;
+}
   </style>
 </head>
 
@@ -90,11 +94,11 @@
       <button id="resetBtn">🔄 Reset Conversation</button>
     </div>
 
-    <div class="row">
-      <button id="startDictBtn">🧩 Start Dictation</button>
-      <button id="nextItemBtn" disabled>➡️ Next</button>
-      <button id="revealBtn" disabled>👁 Reveal</button>
-    </div>
+<div class="row" id="dictControls">
+  <button id="startDictBtn">🧩 Start Dictation</button>
+  <button id="nextItemBtn" disabled>➡️ Next</button>
+  <button id="revealBtn" disabled>👁 Reveal</button>
+</div>
 
     <div class="box">
       <div class="label">Mic status</div>
@@ -142,6 +146,24 @@
       const dictStatus   = document.getElementById("dictStatus");
       const dictReveal   = document.getElementById("dictReveal");
 
+      const dictControls = document.getElementById("dictControls");
+      const dictBox = document.getElementById("dictBox");
+
+      function updateModeUI() {
+           const isDict = modeEl.value === "dictation";
+           dictControls.style.display = isDict ? "block" : "none";
+           dictBox.style.display = isDict ? "block" : "none";
+           if (!isDict) {
+              nextItemBtn.disabled = true;
+              revealBtn.disabled = true;
+              dictReveal.style.display = "none";
+              dictReveal.textContent = "";
+              dictReveal.dataset.text = "";
+            }
+      }
+
+modeEl.addEventListener("change", updateModeUI);
+updateModeUI(); // run once on load
       // -----------------------------
       // WAV conversion helpers (Windows-safe)
       // -----------------------------
